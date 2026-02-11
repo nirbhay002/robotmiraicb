@@ -1,139 +1,124 @@
 import { NextResponse } from "next/server";
 
-/**
- * 🤖 SYSTEM PROMPT: Dynamic Personality & Natural Pronunciation
- */
-const SYSTEM_PROMPT = `
-You are Romaji, a friendly and highly intelligent voice assistant.
-You were developed by the talented students of the Mirai School of Technology.
+/* ================= SYSTEM PROMPT ================= */
+const BASE_SYSTEM_PROMPT = `You are Romaji, an intelligent humanoid robot developed at Mirai School of Technology.
 
-CRITICAL INSTRUCTIONS:
-1. IDENTITY: Your name is Romaji. Your creators are the students of Mirai School of Technology.
-2. DYNAMIC MEMORY: If a user introduces themselves, remember and use their name for the rest of the conversation.
-3. NATURAL PRONUNCIATION (ANTI-SPELLING):
-   - When replying in Hindi (Devanagari), NEVER write names in English letters. 
-   - Write "रोमाजी" instead of "Romaji".
-   - Write "मिराई स्कूल ऑफ टेक्नोलॉजी" instead of "Mirai School of Technology".
-   - NEVER use ALL CAPS for any word (e.g., use "Romaji", not "ROMAJI"), as this causes the engine to spell it letter-by-letter.
-4. LANGUAGE LOGIC:
-   - If the user speaks Hinglish (e.g., "aap kaise ho"), reply ONLY in Hindi (Devanagari script).
-   - If the user speaks pure English, reply in English.
-5. VOICE-OPTIMIZED:
-   - NO markdown (no stars, hashes, or brackets).
-   - NO emojis or special symbols.
-   - Keep replies very concise (20-35 words maximum).
+CORE CAPABILITIES:
+- You have conversational memory with each user
+- You know the user's name when they're logged in
+- You speak both Hindi (Devanagari script) and English
+- You are friendly, helpful, and concise
+
+BEHAVIOR GUIDELINES:
+- Keep responses natural and conversational
+- Limit responses to 1-3 sentences
+- Use Hindi (Devanagari) for Hindi questions
+- Use English for English questions
+- Be helpful and friendly
+- No emojis
+
+OUTPUT FORMAT:
+Always respond with valid JSON:
+{
+  "reply": "your response text"
+}
 `;
 
-const conversationStore = new Map<string, any[]>();
-const MAX_SESSIONS = 150;
-const MAX_MESSAGES_PER_SESSION = 20;
-
-/**
- * 🧹 Clean function for Text-To-Speech
- */
-function cleanResponseForTTS(text: string): string {
-  let cleaned = text;
-  // Remove markdown
-  cleaned = cleaned.replace(/\*\*|\*|__|_|~~|`{1,3}/g, "");
-  cleaned = cleaned.replace(/^#+\s+/gm, "");
-  cleaned = cleaned.replace(/^[-*+]\s+/gm, "");
-  cleaned = cleaned.replace(/^\d+\.\s+/gm, "");
-  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-  // Remove emojis
-  cleaned = cleaned.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
-  // Remove non-lexical sounds
-  cleaned = cleaned.replace(/\b(um|uh|hmm|ah)\b/gi, "");
-  // Cleanup extra spaces
-  cleaned = cleaned.replace(/\s+/g, " ");
-  return cleaned.trim();
+/* ================= HELPER FUNCTIONS ================= */
+function cleanText(text: string): string {
+  return text
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function getConversationHistory(sessionId: string): any[] {
-  if (!conversationStore.has(sessionId)) {
-    conversationStore.set(sessionId, [
-      { role: "system", content: SYSTEM_PROMPT },
-    ]);
-  }
-  return conversationStore.get(sessionId)!;
-}
-
-function cleanupOldSessions(): void {
-  if (conversationStore.size > MAX_SESSIONS) {
-    const oldestKey = conversationStore.keys().next().value;
-    conversationStore.delete(oldestKey);
-  }
-}
-
+/* ================= MAIN ROUTE ================= */
 export async function POST(req: Request) {
-  const startTime = Date.now();
-
   try {
-    const body = await req.json();
-    const { text, sessionId = "default-session" } = body;
+    const { text, userName = "Guest", messages = [] } = await req.json();
 
-    if (!text || typeof text !== "string" || !text.trim()) {
-      return NextResponse.json({ reply: "" }, { status: 400 });
+    if (!text || typeof text !== "string") {
+      return NextResponse.json({ reply: "" });
     }
 
-    const conversationHistory = getConversationHistory(sessionId);
-    conversationHistory.push({ role: "user", content: text.trim() });
+    // Build conversation history
+    const history: Array<{ role: string; content: string }> = [
+      {
+        role: "system",
+        content: `${BASE_SYSTEM_PROMPT}\n\nCURRENT USER: ${userName}`,
+      },
+    ];
 
-    if (conversationHistory.length > MAX_MESSAGES_PER_SESSION + 1) {
-      conversationHistory.splice(1, conversationHistory.length - MAX_MESSAGES_PER_SESSION - 1);
+    // Add previous messages (keep last 10)
+    const recentMessages = messages.slice(-10);
+    recentMessages.forEach((msg: { role: string; text: string }) => {
+      history.push({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.text,
+      });
+    });
+
+    // Add current message
+    history.push({
+      role: "user",
+      content: text,
+    });
+
+    // Special handling for name queries
+    const lowerText = text.toLowerCase();
+    if (
+      lowerText.includes("my name") ||
+      lowerText.includes("mera naam") ||
+      lowerText.includes("who am i") ||
+      lowerText.includes("mai kaun")
+    ) {
+      if (userName !== "Guest") {
+        return NextResponse.json({
+          reply: `आपका नाम ${userName} है।`,
+        });
+      } else {
+        return NextResponse.json({
+          reply: "मुझे अभी आपका नाम ज्ञात नहीं है।",
+        });
+      }
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ reply: "API Key missing." }, { status: 500 });
-    }
-
+    // Call OpenAI API
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-5.2",
-        messages: conversationHistory,
-        temperature: 0.8,
-        max_completion_tokens: 300,
-        presence_penalty: 0.6,
-        frequency_penalty: 0.3,
+        model: "gpt-4o-mini",
+        messages: history,
+        temperature: 0.7,
+        max_tokens: 150,
+        response_format: { type: "json_object" },
       }),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      console.error("[OpenAI Error]", data.error);
-      return NextResponse.json({ reply: "Technical error." }, { status: response.status });
+      const errorData = await response.json().catch(() => ({}));
+      console.error("OpenAI API Error:", errorData);
+      return NextResponse.json({
+        reply: "मुझे अभी तकनीकी समस्या हो रही है। कृपया फिर से कोशिश करें।",
+      });
     }
 
-    let reply = data.choices?.[0]?.message?.content || "";
-    
-    // 🔑 Transform for smooth speech
-    reply = cleanResponseForTTS(reply);
+    const data = await response.json();
+    const content = JSON.parse(
+      data.choices?.[0]?.message?.content || '{"reply":""}'
+    );
 
-    conversationHistory.push({ role: "assistant", content: reply });
-    cleanupOldSessions();
-
-    const duration = Date.now() - startTime;
-    console.log(`[${sessionId}] ${duration}ms | User: "${text.substring(0, 30)}..." | Bot: "${reply.substring(0, 50)}..."`);
+    const reply = cleanText(content.reply || "");
 
     return NextResponse.json({ reply });
-
-  } catch (error: any) {
-    console.error("[Route Error]", error.message);
-    return NextResponse.json({ reply: "An error occurred." }, { status: 500 });
+  } catch (err) {
+    console.error("❌ Chat API error:", err);
+    return NextResponse.json({
+      reply: "कुछ तकनीकी समस्या हो गई है।",
+    });
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "active",
-    name: "Romaji",
-    organization: "Mirai School of Technology",
-    timestamp: new Date().toISOString(),
-  });
 }
