@@ -269,7 +269,7 @@ export default function ChatInterface({
   };
 
   return (
-    <div className="w-full max-w-4xl h-screen flex flex-col p-6">
+    <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-black">
       {/* Scanning Phase */}
       {scanState === "SCANNING" && (
         <div className="flex-1 flex flex-col items-center justify-center">
@@ -324,101 +324,261 @@ export default function ChatInterface({
         </div>
       )}
 
-      {/* Chat Interface */}
+      {/* Interactive Robot Face - Full Screen */}
       {scanState === "READY" && (
         <>
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-cyan-400">
-                Chat with Romaji
-              </h2>
-              {recognizedName && (
-                <p className="text-cyan-300 text-sm">
-                  Logged in as: <span className="font-bold">{recognizedName}</span>
-                </p>
-              )}
-            </div>
+          {/* Top Bar */}
+          <div className="flex justify-between items-center px-8 py-4">
+            {recognizedName && (
+              <p className="text-cyan-300 text-lg">
+                Logged in as: <span className="font-bold text-white">{recognizedName}</span>
+              </p>
+            )}
             <button
               onClick={handleEndChat}
-              className="px-6 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-all"
+              className="px-6 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-all shadow-lg ml-auto"
             >
               🚪 End Chat
             </button>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-gray-900 rounded-xl p-4 mb-4 space-y-3">
-            {messages.length === 0 ? (
-              <div className="text-center text-cyan-500 py-12">
-                <p className="text-lg">👋 Say "Hi" to start chatting!</p>
-                <p className="text-sm mt-2">Click the button below to speak</p>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg ${
-                    msg.role === "user"
-                      ? "bg-cyan-600 ml-auto max-w-md"
-                      : "bg-gray-700 mr-auto max-w-md"
-                  }`}
-                >
-                  <p className="text-white">{msg.text}</p>
-                </div>
-              ))
-            )}
+          {/* Giant Robot Face */}
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <RobotFace isSpeaking={isSpeaking} isListening={listening} />
           </div>
 
-          {/* Input Area */}
-          <div className="flex flex-col items-center gap-4">
-            {/* Robot Face */}
-            <div className="w-24 h-24 rounded-full border-4 border-cyan-400 flex flex-col items-center justify-center">
-              <div className="flex gap-4 mb-2">
-                <div
-                  className={`w-3 h-3 rounded-full bg-cyan-400 ${
-                    isSpeaking ? "animate-pulse" : ""
-                  }`}
-                />
-                <div
-                  className={`w-3 h-3 rounded-full bg-cyan-400 ${
-                    isSpeaking ? "animate-pulse" : ""
-                  }`}
-                />
-              </div>
-              <div
-                className={`bg-white rounded-full ${
-                  isSpeaking ? "h-4" : "h-1"
-                } w-10 transition-all`}
-              />
-            </div>
-
-            {/* Transcript */}
+          {/* Bottom Controls */}
+          <div className="flex flex-col items-center gap-6 pb-8">
+            {/* Live Transcript */}
             {transcript && (
-              <p className="text-cyan-300 italic text-sm">"{transcript}"</p>
+              <div className="bg-gray-800 bg-opacity-80 px-8 py-4 rounded-2xl max-w-2xl">
+                <p className="text-cyan-300 text-center text-xl italic">
+                  "{transcript}"
+                </p>
+              </div>
             )}
 
-            {/* Listen Button */}
+            {/* Status & Button */}
             {!listening && !isSpeaking && (
               <button
                 onClick={startListening}
-                className="px-10 py-4 bg-cyan-500 hover:bg-cyan-600 rounded-xl font-bold text-white shadow-lg transition-all"
+                className="px-12 py-6 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 rounded-2xl font-bold text-white text-xl shadow-2xl transition-all transform hover:scale-105"
               >
                 🎤 Start Speaking
               </button>
             )}
 
             {listening && (
-              <div className="text-cyan-400 font-bold animate-pulse">
-                🎤 Listening...
+              <div className="text-cyan-400 font-bold text-2xl animate-pulse flex items-center gap-3">
+                <div className="w-4 h-4 bg-cyan-400 rounded-full animate-ping" />
+                Listening...
               </div>
             )}
 
             {isSpeaking && (
-              <div className="text-green-400 font-bold">🗣️ Speaking...</div>
+              <div className="text-green-400 font-bold text-2xl flex items-center gap-3">
+                <div className="w-4 h-4 bg-green-400 rounded-full animate-pulse" />
+                Speaking...
+              </div>
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/* ================= ANIMATED ROBOT FACE COMPONENT ================= */
+function RobotFace({ isSpeaking, isListening }: { isSpeaking: boolean; isListening: boolean }) {
+  const [blinkLeft, setBlinkLeft] = useState(false);
+  const [blinkRight, setBlinkRight] = useState(false);
+  const [mouthHeight, setMouthHeight] = useState(4);
+
+  // Random eye blinking (natural)
+  useEffect(() => {
+    const blinkInterval = setInterval(() => {
+      const shouldBlink = Math.random() > 0.7;
+      if (shouldBlink) {
+        setBlinkLeft(true);
+        setBlinkRight(true);
+        setTimeout(() => {
+          setBlinkLeft(false);
+          setBlinkRight(false);
+        }, 150);
+      }
+    }, 3000); // Every 3 seconds chance to blink
+
+    return () => clearInterval(blinkInterval);
+  }, []);
+
+  // Occasional wink for personality
+  useEffect(() => {
+    if (isSpeaking) return; // Don't wink while speaking
+
+    const winkInterval = setInterval(() => {
+      if (Math.random() > 0.85) {
+        const isLeftWink = Math.random() > 0.5;
+        if (isLeftWink) {
+          setBlinkLeft(true);
+          setTimeout(() => setBlinkLeft(false), 250);
+        } else {
+          setBlinkRight(true);
+          setTimeout(() => setBlinkRight(false), 250);
+        }
+      }
+    }, 6000); // Every 6 seconds chance to wink
+
+    return () => clearInterval(winkInterval);
+  }, [isSpeaking]);
+
+  // Animated mouth when speaking
+  useEffect(() => {
+    if (!isSpeaking) {
+      setMouthHeight(4);
+      return;
+    }
+
+    let frame = 0;
+    const animateInterval = setInterval(() => {
+      // Oscillate mouth size when speaking
+      const heights = [4, 12, 20, 24, 20, 12, 8];
+      setMouthHeight(heights[frame % heights.length]);
+      frame++;
+    }, 150);
+
+    return () => clearInterval(animateInterval);
+  }, [isSpeaking]);
+
+  return (
+    <div className="relative flex flex-col items-center justify-center scale-150">
+      {/* Ambient glow when speaking */}
+      {isSpeaking && (
+        <div className="absolute inset-0 -z-10 scale-150">
+          <div className="w-96 h-96 bg-cyan-400 rounded-full blur-[100px] opacity-30 animate-pulse" />
+        </div>
+      )}
+
+      {/* Listening glow */}
+      {isListening && (
+        <div className="absolute inset-0 -z-10 scale-150">
+          <div className="w-96 h-96 bg-blue-400 rounded-full blur-[100px] opacity-20 animate-ping" />
+        </div>
+      )}
+
+      {/* Eyes Container */}
+      <div className="flex gap-32 mb-20">
+        {/* Left Eye */}
+        <div className="relative group">
+          <div
+            className={`w-24 h-24 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 shadow-2xl shadow-cyan-400/50 transition-all duration-150 ${
+              blinkLeft ? "scale-y-[0.05] translate-y-2" : "scale-y-100"
+            } ${isSpeaking ? "animate-pulse" : ""} ${
+              isListening ? "ring-4 ring-blue-400 ring-opacity-50" : ""
+            }`}
+          >
+            {/* Eye shine effect */}
+            {!blinkLeft && (
+              <>
+                <div className="absolute top-3 left-3 w-8 h-8 bg-white rounded-full opacity-80 blur-sm" />
+                <div className="absolute top-2 left-2 w-4 h-4 bg-white rounded-full" />
+              </>
+            )}
+          </div>
+          
+          {/* Eyelid top shadow when blinking */}
+          {blinkLeft && (
+            <div className="absolute inset-0 bg-gradient-to-b from-gray-800 to-transparent rounded-full opacity-40" />
+          )}
+        </div>
+
+        {/* Right Eye */}
+        <div className="relative group">
+          <div
+            className={`w-24 h-24 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 shadow-2xl shadow-cyan-400/50 transition-all duration-150 ${
+              blinkRight ? "scale-y-[0.05] translate-y-2" : "scale-y-100"
+            } ${isSpeaking ? "animate-pulse" : ""} ${
+              isListening ? "ring-4 ring-blue-400 ring-opacity-50" : ""
+            }`}
+          >
+            {/* Eye shine effect */}
+            {!blinkRight && (
+              <>
+                <div className="absolute top-3 left-3 w-8 h-8 bg-white rounded-full opacity-80 blur-sm" />
+                <div className="absolute top-2 left-2 w-4 h-4 bg-white rounded-full" />
+              </>
+            )}
+          </div>
+          
+          {/* Eyelid top shadow when blinking */}
+          {blinkRight && (
+            <div className="absolute inset-0 bg-gradient-to-b from-gray-800 to-transparent rounded-full opacity-40" />
+          )}
+        </div>
+      </div>
+
+      {/* Mouth */}
+      <div className="relative flex items-center justify-center">
+        {isSpeaking ? (
+          // Speaking mouth - animated opening/closing
+          <div className="relative">
+            <div 
+              className="bg-gradient-to-b from-white via-gray-100 to-gray-200 rounded-full shadow-2xl shadow-white/40 transition-all duration-150"
+              style={{
+                width: "160px",
+                height: `${mouthHeight * 4}px`,
+              }}
+            >
+              {/* Inner mouth darkness */}
+              <div 
+                className="absolute inset-2 bg-gray-900 rounded-full"
+                style={{
+                  opacity: mouthHeight > 10 ? 0.8 : 0.2,
+                }}
+              />
+              
+              {/* Teeth (when mouth opens wide) */}
+              {mouthHeight > 15 && (
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 flex gap-2">
+                  <div className="w-3 h-4 bg-white rounded-sm" />
+                  <div className="w-3 h-4 bg-white rounded-sm" />
+                  <div className="w-3 h-4 bg-white rounded-sm" />
+                </div>
+              )}
+            </div>
+
+            {/* Sound waves when speaking */}
+            <div className="absolute -left-12 top-1/2 -translate-y-1/2">
+              <div className="w-8 h-1 bg-cyan-400 rounded-full animate-pulse" />
+            </div>
+            <div className="absolute -left-16 top-1/2 -translate-y-1/2">
+              <div className="w-6 h-1 bg-cyan-400 rounded-full animate-pulse delay-75" />
+            </div>
+            <div className="absolute -right-12 top-1/2 -translate-y-1/2">
+              <div className="w-8 h-1 bg-cyan-400 rounded-full animate-pulse" />
+            </div>
+            <div className="absolute -right-16 top-1/2 -translate-y-1/2">
+              <div className="w-6 h-1 bg-cyan-400 rounded-full animate-pulse delay-75" />
+            </div>
+          </div>
+        ) : isListening ? (
+          // Listening mouth - slightly open smile
+          <div className="w-40 h-10 bg-gradient-to-b from-white to-gray-200 rounded-full shadow-xl shadow-white/30 relative">
+            <div className="absolute inset-2 bg-gray-900 rounded-full opacity-20" />
+          </div>
+        ) : (
+          // Idle mouth - subtle smile
+          <div className="w-36 h-5 bg-white rounded-full shadow-lg shadow-white/20 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-200 to-transparent opacity-50 animate-pulse" />
+          </div>
+        )}
+      </div>
+
+      {/* Breathing effect when idle */}
+      {!isSpeaking && !isListening && (
+        <div className="absolute inset-0 -z-20">
+          <div className="w-full h-full bg-cyan-500 rounded-full blur-3xl opacity-10 animate-pulse" 
+               style={{ animationDuration: '4s' }} />
+        </div>
       )}
     </div>
   );
