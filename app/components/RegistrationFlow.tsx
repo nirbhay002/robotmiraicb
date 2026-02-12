@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import {
-  loadFaceModels,
-  getClosestFace,
-  saveUserData,
-} from "../lib/faceLogic";
+import { captureVideoFrameBlob } from "../lib/cameraFrame";
 
-type RegistrationState = "LOADING" | "READY" | "CAPTURING" | "CAPTURED" | "SAVING";
+type RegistrationState =
+  | "LOADING"
+  | "READY"
+  | "CAPTURING"
+  | "CAPTURED"
+  | "SAVING";
 
 interface RegistrationFlowProps {
   onComplete: (name: string) => void;
@@ -15,22 +16,34 @@ interface RegistrationFlowProps {
 export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) {
   const [state, setState] = useState<RegistrationState>("LOADING");
   const [name, setName] = useState("");
-  const [capturedDescriptor, setCapturedDescriptor] = useState<Float32Array | null>(null);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Load models and start camera
+  const stopCamera = () => {
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach((track) => track.stop());
+  };
+
+  // Start camera
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
       try {
-        await loadFaceModels();
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: 640, height: 480 },
         });
 
-        if (videoRef.current) {
+        if (!mounted) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        if (videoRef.current && mounted) {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
             videoRef.current?.play();
@@ -38,38 +51,34 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
           };
         }
       } catch (err) {
-        console.error("Camera/Model error:", err);
-        setError("Camera access denied or models failed to load");
+        console.error("Camera error:", err);
+        setError("Camera access denied.");
       }
     })();
+
+    return () => {
+      mounted = false;
+      stopCamera();
+    };
   }, []);
 
   const handleCapture = async () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !canvasRef.current) return;
 
     setState("CAPTURING");
     setError(null);
+    setNotice(null);
 
     try {
-      const result = await getClosestFace(videoRef.current);
+      const blob = await captureVideoFrameBlob(videoRef.current);
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      if (!result || !result.face) {
-        setError("No face detected. Please face the camera and try again.");
-        setState("READY");
-        return;
-      }
-
-      // Capture snapshot to canvas
-      if (canvasRef.current && videoRef.current) {
-        const canvas = canvasRef.current;
-        const video = videoRef.current;
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
-
-      setCapturedDescriptor(result.face.descriptor);
+      setCapturedBlob(blob);
       setState("CAPTURED");
     } catch (err) {
       console.error("Capture error:", err);
@@ -79,27 +88,58 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
   };
 
   const handleSave = async () => {
-    if (!capturedDescriptor || !name.trim()) {
+    if (!capturedBlob || !name.trim()) {
       setError("Please enter your name");
       return;
     }
 
     setState("SAVING");
     setError(null);
+    setNotice(null);
 
     try {
-      const success = await saveUserData(name.trim(), capturedDescriptor);
+      const payload = new FormData();
+      payload.set("name", name.trim());
+      payload.set(
+        "file",
+        new File([capturedBlob], "register.jpg", { type: "image/jpeg" })
+      );
 
-      if (success) {
-        // Stop camera
-        const stream = videoRef.current?.srcObject as MediaStream;
-        stream?.getTracks().forEach((track) => track.stop());
+      const response = await fetch("/api/face/register", {
+        method: "POST",
+        body: payload,
+      });
+      const data = await response.json().catch(() => ({}));
 
-        onComplete(name.trim());
-      } else {
-        setError("Failed to save. Please try again.");
+      if (!response.ok) {
+        const detail =
+          data?.detail || data?.error || "Failed to save. Please try again.";
+        setError(String(detail));
         setState("CAPTURED");
+        return;
       }
+
+      const canonicalName =
+        typeof data?.name === "string" && data.name.trim()
+          ? data.name.trim()
+          : name.trim();
+      const registrationMode =
+        typeof data?.registration_mode === "string"
+          ? data.registration_mode
+          : "new";
+
+      if (registrationMode === "existing") {
+        setNotice(`Face already registered as ${canonicalName}.`);
+        setState("CAPTURED");
+        setTimeout(() => {
+          stopCamera();
+          onComplete(canonicalName);
+        }, 1200);
+        return;
+      }
+
+      stopCamera();
+      onComplete(canonicalName);
     } catch (err) {
       console.error("Save error:", err);
       setError("Failed to save. Please try again.");
@@ -108,8 +148,9 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
   };
 
   const handleRetake = () => {
-    setCapturedDescriptor(null);
+    setCapturedBlob(null);
     setName("");
+    setNotice(null);
     setState("READY");
   };
 
@@ -141,7 +182,7 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
       {state === "LOADING" && (
         <div className="text-cyan-300 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400 mx-auto mb-2" />
-          <p>Loading camera and AI models...</p>
+          <p>Loading camera...</p>
         </div>
       )}
 
@@ -192,6 +233,11 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
       {error && (
         <div className="bg-red-900 bg-opacity-50 border-2 border-red-500 rounded-lg p-4 text-red-200">
           ⚠️ {error}
+        </div>
+      )}
+      {notice && (
+        <div className="bg-blue-900 bg-opacity-50 border-2 border-blue-500 rounded-lg p-4 text-blue-100">
+          ℹ️ {notice}
         </div>
       )}
 
