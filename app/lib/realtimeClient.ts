@@ -128,7 +128,7 @@ export class RealtimeClient {
     this.peerConnection.ontrack = async (event) => {
       this.remoteAudioEl.srcObject = event.streams[0];
       this.remoteAudioEl.autoplay = true;
-      this.remoteAudioEl.playsInline = true;
+      this.remoteAudioEl.setAttribute("playsinline", "true");
       await this.remoteAudioEl.play().catch(() => undefined);
     };
 
