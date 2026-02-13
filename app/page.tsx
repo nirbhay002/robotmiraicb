@@ -62,13 +62,13 @@ export default function Home() {
               onClick={handleNewUser}
               className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 rounded-xl font-bold text-white text-lg shadow-lg transition-all transform hover:scale-105"
             >
-              🆕 Register as New User
+              Register as New User
             </button>
             <button
               onClick={handleOldUser}
               className="px-8 py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl font-bold text-white text-lg shadow-lg transition-all transform hover:scale-105"
             >
-              👤 I'm an Old User
+              I'm an Old User
             </button>
           </div>
 

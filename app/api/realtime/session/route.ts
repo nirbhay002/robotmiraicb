@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { buildRealtimeInstructions } from "../../../lib/miraiPolicy";
 
-const REALTIME_MODEL = "gpt-realtime-mini-2025-12-15";
+const REALTIME_MODEL = "gpt-realtime-2025-08-28";
 
 function extractUpstreamMessage(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -19,6 +20,14 @@ function extractUpstreamMessage(payload: unknown): string | null {
   return null;
 }
 
+function parseJsonSafely(value: string): unknown | null {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
@@ -34,23 +43,28 @@ export async function POST(req: Request) {
       typeof body?.userName === "string" ? body.userName.trim() : "";
     const userName = rawName.length > 0 ? rawName : "Guest";
 
-    const sessionResp = await fetch("https://api.openai.com/v1/realtime/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: REALTIME_MODEL,
-        modalities: ["audio", "text"],
-        instructions: `You are Romaji, an intelligent humanoid robot. Current user: ${userName}. Keep responses concise and natural. Start with a warm one-line greeting using the user's name when available, then continue normal conversation.`,
-      }),
-    });
+    const sessionResp = await fetch(
+      "https://api.openai.com/v1/realtime/sessions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: REALTIME_MODEL,
+          modalities: ["audio", "text"],
+          instructions: buildRealtimeInstructions(userName),
+        }),
+      }
+    );
 
-    const sessionJson = await sessionResp.json().catch(() => ({}));
+    const rawBody = await sessionResp.text();
+    const sessionJson = parseJsonSafely(rawBody) ?? {};
     if (!sessionResp.ok) {
       const upstreamMessage =
         extractUpstreamMessage(sessionJson) ||
+        (rawBody.trim().length > 0 ? rawBody : null) ||
         `OpenAI returned HTTP ${sessionResp.status}`;
       return NextResponse.json(
         {
@@ -61,7 +75,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const clientSecret = sessionJson?.client_secret;
+    const clientSecret = (sessionJson as { client_secret?: { value?: string } })
+      ?.client_secret;
     if (!clientSecret?.value) {
       return NextResponse.json(
         { error: "Realtime session did not return a client secret" },

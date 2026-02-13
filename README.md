@@ -41,7 +41,7 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
 - `Join Chat` tap is required (iPad autoplay-safe gesture)
 - Client requests `POST /api/realtime/session`
 - Client opens WebRTC to OpenAI Realtime model:
-  - `gpt-realtime-mini-2025-12-15`
+  - `gpt-realtime-2025-08-28`
 - Bot gives warm first greeting automatically
 - Multi-turn context is retained while this connection stays open
 - On `End Chat`, connection is closed and context is discarded
@@ -56,9 +56,28 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
   - Proxy target: `${FACE_API_BASE}/identify`
 - `POST /api/realtime/session`
   - Creates Realtime session bootstrap using server `OPENAI_API_KEY`
+  - Uses strict shared Mirai policy instructions from `app/lib/miraiPolicy.ts`
   - Returns model + ephemeral client secret
 - `POST /api/chat`
-  - Legacy route kept in repo, not used by primary Realtime flow
+  - Shares the same strict Mirai policy from `app/lib/miraiPolicy.ts`
+  - Kept as text fallback/policy reference route
+
+## Mirai Policy
+
+- Canonical policy source: `app/lib/miraiPolicy.ts`
+- Realtime (`/api/realtime/session`) and text (`/api/chat`) both use the same facts/rules.
+- Unknown, uncertain, or out-of-scope questions return the fixed sentence:
+  - `I don't have enough verified information about that.`
+
+## Policy Regression Fixture
+
+- Script: `scripts/verify-mirai-policy.ts`
+- Purpose: lightweight checks for known-fact answers, exact unknown fallback behavior, and basic hallucination guard patterns.
+- Run from `frontend-and-llm-calls`:
+
+```bash
+npx tsx scripts/verify-mirai-policy.ts
+```
 
 ## Face Registration Dedup Rule
 

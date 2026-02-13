@@ -61,10 +61,11 @@ export class RealtimeClient {
 
     const normalizedName =
       typeof userName === "string" && userName.trim() ? userName.trim() : "Guest";
+    // Keep the opener generic/enthusiastic to avoid priming users toward Mirai-specific topics.
     const kickoffText =
       normalizedName === "Guest"
-        ? "Give me a short warm greeting and invite me to start the conversation."
-        : `Greet ${normalizedName} warmly in one short line and invite the conversation to begin.`;
+        ? "Give one short, enthusiastic welcome and ask: How can I help you today?"
+        : `Give ${normalizedName} one short, enthusiastic welcome and ask: How can I help you today?`;
 
     this.dataChannel.send(
       JSON.stringify({
@@ -98,11 +99,24 @@ export class RealtimeClient {
     });
 
     if (!bootstrapResp.ok) {
-      const err = await bootstrapResp.json().catch(() => ({}));
+      const rawError = await bootstrapResp.text();
+      let err: {
+        error?: string;
+        detail?: unknown;
+      } = {};
+      try {
+        err = JSON.parse(rawError || "{}") as {
+          error?: string;
+          detail?: unknown;
+        };
+      } catch {
+        err = {};
+      }
       const detail =
         typeof err?.detail === "object" ? JSON.stringify(err.detail) : "";
       throw new Error(
         err?.error ||
+          (rawError.trim().length > 0 ? rawError : "") ||
           (detail
             ? `Failed to create realtime session: ${detail}`
             : "Failed to create realtime session")
@@ -164,16 +178,11 @@ export class RealtimeClient {
 
     await this.waitForDataChannelOpen();
 
-    const instructions = userName
-      ? `You are Romaji, an AI robot assistant. The current user is ${userName}. Keep responses concise and natural.`
-      : "You are Romaji, an AI robot assistant. Keep responses concise and natural.";
-
     this.dataChannel.send(
       JSON.stringify({
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
-          instructions,
           turn_detection: { type: "server_vad" },
         },
       })
