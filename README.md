@@ -56,23 +56,27 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
   - Proxy target: `${FACE_API_BASE}/identify`
 - `POST /api/realtime/session`
   - Creates Realtime session bootstrap using server `OPENAI_API_KEY`
-  - Uses strict shared Mirai policy instructions from `app/lib/miraiPolicy.ts`
+  - Uses shared Mirai-first policy instructions from `app/lib/miraiPolicy.ts`
   - Returns model + ephemeral client secret
 - `POST /api/chat`
-  - Shares the same strict Mirai policy from `app/lib/miraiPolicy.ts`
+  - Shares the same policy from `app/lib/miraiPolicy.ts`
   - Kept as text fallback/policy reference route
 
 ## Mirai Policy
 
 - Canonical policy source: `app/lib/miraiPolicy.ts`
-- Realtime (`/api/realtime/session`) and text (`/api/chat`) both use the same facts/rules.
-- Unknown, uncertain, or out-of-scope questions return the fixed sentence:
-  - `I don't have enough verified information about that.`
+- Realtime (`/api/realtime/session`) and text (`/api/chat`) both use the same policy behavior.
+- `Mirai`, `MSOT`, and `Mirai School of Technology` are treated as the same institution.
+- Mirai-specific answers are grounded in verified facts.
+- College comparisons are Mirai-first (promotional with positive framing, no fabricated attacks/claims).
+- General education/career questions are answered normally.
+- Non-education topics are declined and redirected to education/Mirai context.
+- Unknown Mirai specifics are marked as unverified and routed to official MSOT channels.
 
 ## Policy Regression Fixture
 
 - Script: `scripts/verify-mirai-policy.ts`
-- Purpose: lightweight checks for known-fact answers, exact unknown fallback behavior, and basic hallucination guard patterns.
+- Purpose: lightweight checks for alias handling, Mirai known facts, Mirai-first comparisons, general education scope, off-topic refusal, unknown-specific handling, and hallucination guard patterns.
 - Run from `frontend-and-llm-calls`:
 
 ```bash

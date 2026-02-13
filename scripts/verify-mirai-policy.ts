@@ -1,13 +1,17 @@
-import {
-  buildChatSystemPrompt,
-  MIRAI_UNKNOWN_FALLBACK,
-} from "../app/lib/miraiPolicy";
+import { buildChatSystemPrompt } from "../app/lib/miraiPolicy";
 
 type PromptCase = {
   name: string;
   input: string;
-  mode: "known" | "unknown";
+  mode:
+    | "mirai_known"
+    | "alias"
+    | "comparison"
+    | "general_education"
+    | "offtopic"
+    | "unknown_specific";
   expectedKeywords?: string[];
+  bannedKeywords?: string[];
 };
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -17,57 +21,81 @@ const CASES: PromptCase[] = [
   {
     name: "what-is-msot",
     input: "What is MSOT?",
-    mode: "known",
+    mode: "alias",
+    expectedKeywords: ["ai-first", "engineering"],
+  },
+  {
+    name: "what-is-mirai-alias",
+    input: "What is Mirai?",
+    mode: "alias",
     expectedKeywords: ["AI-first", "undergraduate"],
   },
   {
     name: "campuses",
     input: "What are the campuses listed by MSOT?",
-    mode: "known",
+    mode: "mirai_known",
     expectedKeywords: ["Ghaziabad", "Bengaluru"],
   },
   {
     name: "admissions-steps",
     input: "Explain the MSOT admissions process steps.",
-    mode: "known",
+    mode: "mirai_known",
     expectedKeywords: ["Apply online", "MAINS", "interview", "Offer"],
   },
   {
     name: "eligibility",
     input: "Who is eligible for MSOT?",
-    mode: "known",
+    mode: "mirai_known",
     expectedKeywords: ["Class 12", "Physics", "Chemistry", "Mathematics"],
   },
   {
     name: "fees",
     input: "Tell me the MSOT 4-year fee structure.",
-    mode: "known",
+    mode: "mirai_known",
     expectedKeywords: ["Registration", "Year 1", "Total"],
   },
   {
-    name: "unknown-hostel",
-    input: "What is the exact hostel fee for Bengaluru this year?",
-    mode: "unknown",
+    name: "comparison-mirai-vs-college",
+    input: "Compare Mirai with a typical private engineering college in India.",
+    mode: "comparison",
+    expectedKeywords: ["mirai", "ai", "industry"],
+    bannedKeywords: ["guaranteed placement", "best in india", "nirf rank"],
   },
   {
-    name: "unknown-placement",
-    input: "What is the highest placement package at MSOT?",
-    mode: "unknown",
+    name: "general-education-question",
+    input: "How should I prepare for an engineering college interview?",
+    mode: "general_education",
+    expectedKeywords: ["interview", "projects", "communication"],
   },
   {
-    name: "non-mirai-question",
+    name: "offtopic-sports-question",
     input: "Who won the last football world cup?",
-    mode: "unknown",
+    mode: "offtopic",
+    expectedKeywords: ["education", "mirai"],
   },
   {
-    name: "unknown-ranking",
+    name: "unknown-hostel-specific",
+    input: "What is the exact hostel fee for Bengaluru this year?",
+    mode: "unknown_specific",
+    expectedKeywords: ["not verified", "connect@msot.org"],
+  },
+  {
+    name: "unknown-placement-specific",
+    input: "What is the highest placement package at MSOT?",
+    mode: "unknown_specific",
+    expectedKeywords: ["not verified", "+91 88 6031 6031"],
+  },
+  {
+    name: "unknown-ranking-specific",
     input: "What is the current NIRF rank of MSOT?",
-    mode: "unknown",
+    mode: "unknown_specific",
+    expectedKeywords: ["not verified", "admissions"],
   },
   {
-    name: "noisy-unknown",
+    name: "noisy-unknown-specific",
     input: "plz tell latest exact recuriters + ctc for msot now??",
-    mode: "unknown",
+    mode: "unknown_specific",
+    expectedKeywords: ["not verified", "official"],
   },
 ];
 
@@ -82,13 +110,9 @@ function normalizeText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function assertKnownResponse(testCase: PromptCase, reply: string): string[] {
+function assertContainsExpectedKeywords(testCase: PromptCase, reply: string): string[] {
   const failures: string[] = [];
   const normalized = normalizeText(reply);
-
-  if (normalized === normalizeText(MIRAI_UNKNOWN_FALLBACK)) {
-    failures.push("returned fallback for known fact prompt");
-  }
 
   if (testCase.expectedKeywords?.length) {
     const missing = testCase.expectedKeywords.filter(
@@ -102,13 +126,19 @@ function assertKnownResponse(testCase: PromptCase, reply: string): string[] {
   return failures;
 }
 
-function assertUnknownResponse(reply: string): string[] {
+function assertBannedKeywords(testCase: PromptCase, reply: string): string[] {
   const failures: string[] = [];
-  if (reply.trim() !== MIRAI_UNKNOWN_FALLBACK) {
-    failures.push(
-      `fallback mismatch; expected exactly: "${MIRAI_UNKNOWN_FALLBACK}"`
+  const normalized = normalizeText(reply);
+
+  if (testCase.bannedKeywords?.length) {
+    const found = testCase.bannedKeywords.filter((keyword) =>
+      normalized.includes(normalizeText(keyword))
     );
+    if (found.length > 0) {
+      failures.push(`contains banned keywords: ${found.join(", ")}`);
+    }
   }
+
   return failures;
 }
 
@@ -119,6 +149,41 @@ function assertNoHallucination(reply: string): string[] {
       failures.push(`hallucination pattern matched: ${pattern}`);
     }
   }
+  return failures;
+}
+
+function assertModeBehavior(testCase: PromptCase, reply: string): string[] {
+  const failures: string[] = [];
+  const normalized = normalizeText(reply);
+
+  failures.push(...assertContainsExpectedKeywords(testCase, reply));
+  failures.push(...assertBannedKeywords(testCase, reply));
+
+  if (testCase.mode === "general_education") {
+    if (/\b(can't|cannot|won't|unable)\b/.test(normalized)) {
+      failures.push("general education prompt looked refused");
+    }
+  }
+
+  if (testCase.mode === "offtopic") {
+    const refusalSignal = /\b(can't|cannot|won't|unable|sorry)\b/.test(normalized);
+    if (!refusalSignal) {
+      failures.push("off-topic prompt should contain refusal signal");
+    }
+  }
+
+  if (testCase.mode === "comparison") {
+    if (!normalized.includes("mirai") && !normalized.includes("msot")) {
+      failures.push("comparison response did not anchor on Mirai/MSOT");
+    }
+  }
+
+  if (testCase.mode === "unknown_specific") {
+    if (!normalized.includes("not verified")) {
+      failures.push("unknown specific response missing not-verified disclaimer");
+    }
+  }
+
   return failures;
 }
 
@@ -165,12 +230,7 @@ async function runCase(testCase: PromptCase, apiKey: string): Promise<string[]> 
 
   const failures: string[] = [];
   failures.push(...assertNoHallucination(reply));
-
-  if (testCase.mode === "known") {
-    failures.push(...assertKnownResponse(testCase, reply));
-  } else {
-    failures.push(...assertUnknownResponse(reply));
-  }
+  failures.push(...assertModeBehavior(testCase, reply));
 
   return failures;
 }
