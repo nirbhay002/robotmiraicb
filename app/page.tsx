@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import RegistrationFlow from "./components/RegistrationFlow";
 import ChatInterface from "./components/ChatInterface";
+import miraiLogo from "../assets/mirai-logo.png";
 
 type AppState = "LANDING" | "REGISTRATION" | "CHAT";
 type UserType = "NEW" | "OLD";
@@ -52,6 +54,9 @@ export default function Home() {
           <h1 className="text-4xl font-bold text-cyan-400 mb-4">
             Romaji AI Robot
           </h1>
+          <div className="flex justify-center mb-4">
+            <Image src={miraiLogo} alt="Mirai logo" width={130} />
+          </div>
           <p className="text-cyan-300 text-sm mb-8">
             Mirai School of Technology
           </p>
@@ -68,7 +73,7 @@ export default function Home() {
               onClick={handleOldUser}
               className="px-8 py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl font-bold text-white text-lg shadow-lg transition-all transform hover:scale-105"
             >
-              I'm an Old User
+              I&apos;m an Old User
             </button>
           </div>
 

@@ -189,7 +189,7 @@ export default function RegistrationFlow({ onComplete }: RegistrationFlowProps) 
       {state === "READY" && (
         <div className="text-cyan-300 text-center">
           <p className="text-lg mb-2">📸 Position your face in the camera</p>
-          <p className="text-sm text-cyan-500">Make sure you're in good lighting</p>
+          <p className="text-sm text-cyan-500">Make sure you&apos;re in good lighting</p>
         </div>
       )}
 
