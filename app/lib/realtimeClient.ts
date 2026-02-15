@@ -6,6 +6,25 @@ type SessionBootstrap = {
   };
 };
 
+const DEFAULT_VAD_THRESHOLD = 0.72;
+const DEFAULT_VAD_PREFIX_PADDING_MS = 300;
+const DEFAULT_VAD_SILENCE_DURATION_MS = 900;
+
+function getNumberEnv(
+  key: string,
+  fallback: number,
+  { min, max }: { min?: number; max?: number } = {}
+): number {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (typeof min === "number" && parsed < min) return fallback;
+  if (typeof max === "number" && parsed > max) return fallback;
+  return parsed;
+}
+
 export class RealtimeClient {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
@@ -130,7 +149,13 @@ export class RealtimeClient {
     }
 
     this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: {
+        // Bias capture toward foreground voice in noisy environments.
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,
+        channelCount: 1,
+      },
       video: false,
     });
 
@@ -178,12 +203,33 @@ export class RealtimeClient {
 
     await this.waitForDataChannelOpen();
 
+    const vadThreshold = getNumberEnv(
+      "NEXT_PUBLIC_REALTIME_VAD_THRESHOLD",
+      DEFAULT_VAD_THRESHOLD,
+      { min: 0.1, max: 0.95 }
+    );
+    const vadPrefixPaddingMs = getNumberEnv(
+      "NEXT_PUBLIC_REALTIME_VAD_PREFIX_PADDING_MS",
+      DEFAULT_VAD_PREFIX_PADDING_MS,
+      { min: 100, max: 1000 }
+    );
+    const vadSilenceDurationMs = getNumberEnv(
+      "NEXT_PUBLIC_REALTIME_VAD_SILENCE_DURATION_MS",
+      DEFAULT_VAD_SILENCE_DURATION_MS,
+      { min: 300, max: 2000 }
+    );
+
     this.dataChannel.send(
       JSON.stringify({
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
-          turn_detection: { type: "server_vad" },
+          turn_detection: {
+            type: "server_vad",
+            threshold: vadThreshold,
+            prefix_padding_ms: vadPrefixPaddingMs,
+            silence_duration_ms: vadSilenceDurationMs,
+          },
         },
       })
     );

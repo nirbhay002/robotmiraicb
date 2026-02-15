@@ -13,15 +13,24 @@ export async function POST(req: Request) {
     const faceApiBase = getFaceApiBase();
     const incoming = await req.formData();
     const fileValue = incoming.get("file");
+    const userId = incoming.get("user_id");
+    const sessionId = incoming.get("session_id");
 
     if (!(fileValue instanceof File)) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
+    if (typeof userId !== "string" || !userId.trim()) {
+      return NextResponse.json({ error: "user_id is required" }, { status: 400 });
+    }
 
     const outgoing = new FormData();
-    outgoing.set("file", fileValue, fileValue.name || "identify.jpg");
+    outgoing.set("file", fileValue, fileValue.name || "identify-adapt.jpg");
+    outgoing.set("user_id", userId.trim());
+    if (typeof sessionId === "string" && sessionId.trim()) {
+      outgoing.set("session_id", sessionId.trim());
+    }
 
-    const upstream = await fetch(`${faceApiBase}/identify`, {
+    const upstream = await fetch(`${faceApiBase}/identify/adapt`, {
       method: "POST",
       body: outgoing,
       headers: {

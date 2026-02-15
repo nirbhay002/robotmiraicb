@@ -19,7 +19,95 @@ type ChatPhase =
   | "ERROR";
 
 const SCAN_DURATION_MS = 10_000;
-const SCAN_INTERVAL_MS = 400;
+const FAST_SCAN_MIN_MS = 300;
+const FAST_SCAN_MAX_MS = 400;
+const SLOW_SCAN_MIN_MS = 700;
+const SLOW_SCAN_MAX_MS = 900;
+const MID_SCAN_MIN_MS = 500;
+const MID_SCAN_MAX_MS = 650;
+const MATCH_WINDOW_SIZE = 4;
+const REQUIRED_MATCHES = 2;
+const MIN_FACE_AREA_RATIO = 0.12;
+const CENTER_BOX_MIN = 0.3;
+const CENTER_BOX_MAX = 0.7;
+const BLUR_VARIANCE_THRESHOLD = 45;
+
+type DetectableFace = {
+  boundingBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+type FaceDetectorLike = {
+  detect(input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement): Promise<DetectableFace[]>;
+};
+
+type FaceDetectorCtor = new (options?: {
+  fastMode?: boolean;
+  maxDetectedFaces?: number;
+}) => FaceDetectorLike;
+
+function randomBetween(min: number, max: number) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function createScanSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `scan-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+}
+
+function nextScanDelayMs(rttMs: number): number {
+  if (rttMs < 250) {
+    return randomBetween(FAST_SCAN_MIN_MS, FAST_SCAN_MAX_MS);
+  }
+  if (rttMs < 500) {
+    return randomBetween(MID_SCAN_MIN_MS, MID_SCAN_MAX_MS);
+  }
+  return randomBetween(SLOW_SCAN_MIN_MS, SLOW_SCAN_MAX_MS);
+}
+
+function laplacianVariance(
+  source: HTMLVideoElement,
+  width: number,
+  height: number
+): number {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 0;
+
+  ctx.drawImage(source, 0, 0, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const gray = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+    gray[i] = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+  }
+
+  let sum = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const lap =
+        4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - width] - gray[i + width];
+      sum += lap;
+      sumSq += lap * lap;
+      count++;
+    }
+  }
+
+  if (count === 0) return 0;
+  const mean = sum / count;
+  return sumSq / count - mean * mean;
+}
 
 export default function ChatInterface({
   userName,
@@ -33,12 +121,19 @@ export default function ChatInterface({
   const [recognizedName, setRecognizedName] = useState<string | null>(userName);
   const [scanProgress, setScanProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [scanHint, setScanHint] = useState("Position your face in the center");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backHomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeRef = useRef<RealtimeClient | null>(null);
+  const faceDetectorRef = useRef<FaceDetectorLike | null>(null);
+  const localGateReadyRef = useRef(false);
+  const localGateUnsupportedNotifiedRef = useRef(false);
+  const recentMatchIdsRef = useRef<(string | null)[]>([]);
+  const scanSessionIdRef = useRef<string>("");
+  const adaptiveRequestedUsersRef = useRef<Set<string>>(new Set());
   const onEndChatRef = useRef(onEndChat);
   const onUserRecognizedRef = useRef(onUserRecognized);
 
@@ -46,6 +141,22 @@ export default function ChatInterface({
     onEndChatRef.current = onEndChat;
     onUserRecognizedRef.current = onUserRecognized;
   }, [onEndChat, onUserRecognized]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ctor = (window as Window & { FaceDetector?: FaceDetectorCtor }).FaceDetector;
+    if (!ctor) {
+      return;
+    }
+    try {
+      faceDetectorRef.current = new ctor({ fastMode: true, maxDetectedFaces: 3 });
+      localGateReadyRef.current = true;
+    } catch (err) {
+      console.warn("Local FaceDetector initialization failed:", err);
+      faceDetectorRef.current = null;
+      localGateReadyRef.current = false;
+    }
+  }, []);
 
   const stopCamera = () => {
     const stream = videoRef.current?.srcObject as MediaStream | null;
@@ -76,6 +187,94 @@ export default function ChatInterface({
     realtimeRef.current?.disconnect();
     realtimeRef.current = null;
     onEndChatRef.current();
+  };
+
+  const triggerPassiveAdaptation = async (userId: string) => {
+    if (!videoRef.current) return;
+    if (adaptiveRequestedUsersRef.current.has(userId)) return;
+    adaptiveRequestedUsersRef.current.add(userId);
+
+    try {
+      const frameBlob = await captureVideoFrameBlob(videoRef.current, {
+        maxWidth: 720,
+        maxHeight: 720,
+        type: "image/jpeg",
+        quality: 0.72,
+      });
+
+      const payload = new FormData();
+      payload.set(
+        "file",
+        new File([frameBlob], "identify-adapt.jpg", { type: "image/jpeg" })
+      );
+      payload.set("user_id", userId);
+      payload.set("session_id", scanSessionIdRef.current);
+
+      await fetch("/api/face/identify/adapt", {
+        method: "POST",
+        headers: { "x-session-id": scanSessionIdRef.current },
+        body: payload,
+      });
+    } catch (adaptErr) {
+      console.warn("Passive adaptation request failed:", adaptErr);
+    }
+  };
+
+  const pushMatch = (userId: string | null) => {
+    recentMatchIdsRef.current.push(userId);
+    while (recentMatchIdsRef.current.length > MATCH_WINDOW_SIZE) {
+      recentMatchIdsRef.current.shift();
+    }
+  };
+
+  const hasTemporalConfirmation = (userId: string) => {
+    const count = recentMatchIdsRef.current.filter((id) => id === userId).length;
+    return count >= REQUIRED_MATCHES;
+  };
+
+  const runLocalForegroundGate = async (
+    video: HTMLVideoElement
+  ): Promise<{ ok: boolean; hint: string }> => {
+    if (!localGateReadyRef.current || !faceDetectorRef.current) {
+      if (!localGateUnsupportedNotifiedRef.current) {
+        localGateUnsupportedNotifiedRef.current = true;
+        setScanHint("Local gate unavailable in this browser, using server checks");
+      }
+      return { ok: true, hint: "Looking for registered faces..." };
+    }
+
+    const faces = await faceDetectorRef.current.detect(video);
+    if (faces.length === 0) {
+      return { ok: false, hint: "No face detected. Move into frame." };
+    }
+    if (faces.length > 1) {
+      return { ok: false, hint: "Only one person should be visible." };
+    }
+
+    const box = faces[0].boundingBox;
+    const frameArea = Math.max(video.videoWidth * video.videoHeight, 1);
+    const faceAreaRatio = (box.width * box.height) / frameArea;
+    if (faceAreaRatio < MIN_FACE_AREA_RATIO) {
+      return { ok: false, hint: "Move closer to the camera." };
+    }
+
+    const cx = (box.x + box.width / 2) / Math.max(video.videoWidth, 1);
+    const cy = (box.y + box.height / 2) / Math.max(video.videoHeight, 1);
+    if (
+      cx < CENTER_BOX_MIN ||
+      cx > CENTER_BOX_MAX ||
+      cy < CENTER_BOX_MIN ||
+      cy > CENTER_BOX_MAX
+    ) {
+      return { ok: false, hint: "Center your face in the frame." };
+    }
+
+    const blurScore = laplacianVariance(video, 96, 96);
+    if (blurScore < BLUR_VARIANCE_THRESHOLD) {
+      return { ok: false, hint: "Hold still and improve lighting." };
+    }
+
+    return { ok: true, hint: "Face quality good. Verifying identity..." };
   };
 
   const handleJoinChat = async () => {
@@ -115,6 +314,9 @@ export default function ChatInterface({
 
     let cancelled = false;
     let scanStartedAt = 0;
+    recentMatchIdsRef.current = [];
+    scanSessionIdRef.current = createScanSessionId();
+    adaptiveRequestedUsersRef.current.clear();
 
     const startScanning = () => {
       const loop = async () => {
@@ -135,11 +337,19 @@ export default function ChatInterface({
         }
 
         try {
+          const gate = await runLocalForegroundGate(videoRef.current);
+          setScanHint(gate.hint);
+          if (!gate.ok) {
+            scanTimerRef.current = setTimeout(loop, randomBetween(250, 450));
+            return;
+          }
+
+          const requestStartedAt = Date.now();
           const frameBlob = await captureVideoFrameBlob(videoRef.current, {
-            maxWidth: 1024,
-            maxHeight: 1280,
+            maxWidth: 720,
+            maxHeight: 720,
             type: "image/jpeg",
-            quality: 0.8,
+            quality: 0.68,
           });
 
           const payload = new FormData();
@@ -150,29 +360,57 @@ export default function ChatInterface({
 
           const response = await fetch("/api/face/identify", {
             method: "POST",
+            headers: { "x-session-id": scanSessionIdRef.current },
             body: payload,
           });
           const data = await response.json().catch(() => ({}));
+          const elapsedRttMs = Date.now() - requestStartedAt;
 
           if (response.ok && data?.status === "found") {
-            stopScanTimer();
-            stopCamera();
-            stopBackHomeTimer();
-
             const matchedName =
               typeof data?.name === "string" && data.name.trim()
                 ? data.name.trim()
                 : "Guest";
-            setRecognizedName(matchedName);
-            onUserRecognizedRef.current(matchedName);
-            setPhase("FOUND_WAITING_GESTURE");
+            const matchedUserId =
+              typeof data?.user_id === "string" ? data.user_id : null;
+            pushMatch(matchedUserId);
+
+            if (matchedUserId && hasTemporalConfirmation(matchedUserId)) {
+              void triggerPassiveAdaptation(matchedUserId);
+              stopScanTimer();
+              stopCamera();
+              stopBackHomeTimer();
+              setRecognizedName(matchedName);
+              onUserRecognizedRef.current(matchedName);
+              setPhase("FOUND_WAITING_GESTURE");
+              return;
+            }
+
+            setScanHint("Face matched. Confirming identity...");
+            scanTimerRef.current = setTimeout(loop, nextScanDelayMs(elapsedRttMs));
             return;
           }
+
+          pushMatch(null);
+          const reason =
+            typeof data?.reason === "string" ? data.reason : "below_threshold";
+          if (reason === "ambiguous") {
+            setScanHint("Multiple similar faces detected. Stay alone in frame.");
+          } else if (reason === "low_quality") {
+            setScanHint("Face quality is low. Move closer and hold still.");
+          } else if (reason === "no_face") {
+            setScanHint("No face found. Move into frame.");
+          } else {
+            setScanHint("Looking for registered faces...");
+          }
+          scanTimerRef.current = setTimeout(loop, nextScanDelayMs(elapsedRttMs));
+          return;
         } catch (scanErr) {
           console.error("Face scan request failed:", scanErr);
+          setScanHint("Scan error. Retrying...");
         }
 
-        scanTimerRef.current = setTimeout(loop, SCAN_INTERVAL_MS);
+        scanTimerRef.current = setTimeout(loop, randomBetween(650, 900));
       };
 
       void loop();
@@ -243,7 +481,7 @@ export default function ChatInterface({
             />
           </div>
           <p className="text-cyan-300 text-sm">
-            {Math.round(scanProgress)}% - Looking for registered faces...
+            {Math.round(scanProgress)}% - {scanHint}
           </p>
         </div>
       )}

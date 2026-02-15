@@ -27,8 +27,11 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
 - UI transitions to chat with canonical backend name
 
 ### 3) Old User Recognition
-- Browser starts 10-second scan loop (~400ms interval)
-- Each tick uploads downscaled frame to `POST /api/face/identify`
+- Browser starts 10-second scan loop with adaptive cadence based on prior request latency
+- Client enforces foreground checks before upload when browser `FaceDetector` is available:
+  - single face, centered, large enough, non-blurry
+- Each valid tick uploads a smaller downscaled frame to `POST /api/face/identify`
+- Recognition requires temporal confirmation (same `user_id` appearing across recent frames)
 - On first match:
   - stop polling
   - stop camera tracks
@@ -102,11 +105,15 @@ Create `frontend-and-llm-calls/.env.local`:
 ```env
 OPENAI_API_KEY=your_openai_api_key
 FACE_API_BASE=http://localhost:7000
+NEXT_PUBLIC_REALTIME_VAD_THRESHOLD=0.72
+NEXT_PUBLIC_REALTIME_VAD_PREFIX_PADDING_MS=300
+NEXT_PUBLIC_REALTIME_VAD_SILENCE_DURATION_MS=900
 ```
 
 Notes:
 - Do not place env file in `app/`; place it at project root.
 - Restart dev server after env changes.
+- In noisier spaces, increase `NEXT_PUBLIC_REALTIME_VAD_THRESHOLD` (for example: `0.78`) to reduce background-triggered turns.
 
 ## Local Development
 
