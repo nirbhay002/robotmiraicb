@@ -234,6 +234,30 @@ export default function ChatInterface({
     return count >= REQUIRED_MATCHES;
   };
 
+  const reportClientMetricEvent = async (payload: {
+    client_rtt_ms: number;
+    server_processing_ms?: number;
+    gateway_upstream_ms?: number;
+    status?: "found" | "unknown" | "error";
+    reason?: string;
+  }) => {
+    try {
+      await fetch("/api/metrics/face/client", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-id": scanSessionIdRef.current,
+        },
+        body: JSON.stringify({
+          ...payload,
+          session_id: scanSessionIdRef.current,
+        }),
+      });
+    } catch (err) {
+      console.warn("Client metrics event failed:", err);
+    }
+  };
+
   const runLocalForegroundGate = async (
     video: HTMLVideoElement
   ): Promise<{ ok: boolean; hint: string }> => {
@@ -367,6 +391,31 @@ export default function ChatInterface({
           });
           const data = await response.json().catch(() => ({}));
           const elapsedRttMs = Date.now() - requestStartedAt;
+          const serverProcessingMs =
+            typeof data?.server_processing_ms === "number"
+              ? data.server_processing_ms
+              : typeof data?.latency_ms === "number"
+                ? data.latency_ms
+                : undefined;
+          const gatewayUpstreamMs =
+            typeof data?.gateway_upstream_ms === "number"
+              ? data.gateway_upstream_ms
+              : undefined;
+          const statusValue =
+            data?.status === "found" || data?.status === "unknown"
+              ? data.status
+              : response.ok
+                ? undefined
+                : "error";
+          const reasonValue = typeof data?.reason === "string" ? data.reason : undefined;
+
+          void reportClientMetricEvent({
+            client_rtt_ms: elapsedRttMs,
+            server_processing_ms: serverProcessingMs,
+            gateway_upstream_ms: gatewayUpstreamMs,
+            status: statusValue,
+            reason: reasonValue,
+          });
 
           if (response.ok && data?.status === "found") {
             const matchedName =
