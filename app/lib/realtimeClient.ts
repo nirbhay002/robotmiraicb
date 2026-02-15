@@ -224,8 +224,6 @@ export class RealtimeClient {
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
-          instructions:
-            "Language lock rule: after the English greeting, infer language from the first substantive user message and keep responding in that same language for the session. Switch only if the user explicitly asks to change language. If unsure between English and Hindi, ask one short clarification in English.",
           turn_detection: {
             type: "server_vad",
             threshold: vadThreshold,

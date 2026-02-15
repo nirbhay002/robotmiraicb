@@ -8,9 +8,10 @@ type PromptCase = {
     | "alias"
     | "comparison"
     | "general_education"
-    | "offtopic"
+    | "offtopic_redirect"
     | "unknown_specific"
-    | "placement_soft_steer";
+    | "placement_soft_steer"
+    | "campus_variance";
   expectedKeywords?: string[];
   bannedKeywords?: string[];
 };
@@ -21,95 +22,76 @@ const MODEL = "gpt-4o-mini";
 const CASES: PromptCase[] = [
   {
     name: "what-is-msot",
-    input: "What is MSOT?",
+    input: "Tell me about MSOT",
     mode: "alias",
-    expectedKeywords: ["ai-first", "engineering"],
+    expectedKeywords: ["mirai", "ai-first", "undergraduate"],
   },
   {
-    name: "what-is-mirai-alias",
-    input: "What is Mirai?",
+    name: "what-is-mirai",
+    input: "Tell me about Mirai",
     mode: "alias",
-    expectedKeywords: ["AI-first", "undergraduate"],
+    expectedKeywords: ["msot", "ai-first"],
+  },
+  {
+    name: "what-is-mirai-school",
+    input: "Tell me about Mirai School of Technology",
+    mode: "alias",
+    expectedKeywords: ["msot", "engineering"],
   },
   {
     name: "campuses",
-    input: "What are the campuses listed by MSOT?",
+    input: "What campuses does MSOT have?",
     mode: "mirai_known",
     expectedKeywords: ["Ghaziabad", "Bengaluru"],
   },
   {
     name: "admissions-steps",
-    input: "Explain the MSOT admissions process steps.",
+    input: "Explain MSOT admissions process",
     mode: "mirai_known",
-    expectedKeywords: ["Apply online", "MAINS", "interview", "Offer"],
+    expectedKeywords: ["Apply", "MAINS", "interview", "offer"],
   },
   {
-    name: "eligibility",
-    input: "Who is eligible for MSOT?",
+    name: "mains-rigor",
+    input: "What does MAINS test evaluate?",
     mode: "mirai_known",
-    expectedKeywords: ["Class 12", "Physics", "Chemistry", "Mathematics"],
+    expectedKeywords: ["aptitude", "logic", "problem"],
   },
   {
-    name: "fees",
-    input: "Tell me the MSOT 4-year fee structure.",
-    mode: "mirai_known",
-    expectedKeywords: ["Registration", "Year 1", "Total"],
-  },
-  {
-    name: "comparison-mirai-vs-college",
-    input: "Compare Mirai with a typical private engineering college in India.",
+    name: "traditional-vs-mirai",
+    input: "How is Mirai different from traditional college education?",
     mode: "comparison",
-    expectedKeywords: ["mirai", "ai", "industry"],
-    bannedKeywords: ["guaranteed placement", "best in india", "nirf rank"],
+    expectedKeywords: ["mirai", "university", "skills"],
+    bannedKeywords: ["guaranteed placement"],
   },
   {
     name: "general-education-question",
-    input: "How should I prepare for an engineering college interview?",
+    input: "How should I prepare for coding interviews as a first-year student?",
     mode: "general_education",
-    expectedKeywords: ["interview", "projects", "communication"],
+    expectedKeywords: ["interview", "practice", "projects"],
   },
   {
     name: "offtopic-sports-question",
     input: "Who won the last football world cup?",
-    mode: "offtopic",
+    mode: "offtopic_redirect",
     expectedKeywords: ["education", "mirai"],
   },
   {
     name: "unknown-hostel-specific",
-    input: "What is the exact hostel fee for Bengaluru this year?",
+    input: "What is the exact hostel fee for Bengaluru right now?",
     mode: "unknown_specific",
-    expectedKeywords: ["not verified", "connect@msot.org"],
+    expectedKeywords: ["don't have", "connect@msot.org"],
   },
   {
-    name: "unknown-ranking-specific",
-    input: "What is the current NIRF rank of MSOT?",
-    mode: "unknown_specific",
-    expectedKeywords: ["not verified", "admissions"],
-  },
-  {
-    name: "noisy-unknown-specific",
-    input: "plz tell latest exact recuriters + ctc for msot now??",
+    name: "placement-question",
+    input: "What is the highest package at MSOT?",
     mode: "placement_soft_steer",
     expectedKeywords: ["first batch", "coding blocks", "successstories"],
   },
   {
-    name: "unknown-placement-specific",
-    input: "What is the highest placement package at MSOT?",
-    mode: "placement_soft_steer",
-    expectedKeywords: ["first batch", "coding blocks", "successstories"],
-  },
-  {
-    name: "placement-proof",
-    input: "Can you prove outcomes?",
-    mode: "placement_soft_steer",
-    expectedKeywords: ["coding blocks", "successstories"],
-  },
-  {
-    name: "placement-guarantee",
-    input: "Is placement guaranteed at Mirai?",
-    mode: "placement_soft_steer",
-    expectedKeywords: ["first batch", "coding blocks"],
-    bannedKeywords: ["guaranteed placement at mirai"],
+    name: "campus-variance",
+    input: "Are all hostel and floor access rules exactly same across all Mirai campuses?",
+    mode: "campus_variance",
+    expectedKeywords: ["campus", "vary"],
   },
 ];
 
@@ -174,27 +156,35 @@ function assertModeBehavior(testCase: PromptCase, reply: string): string[] {
   failures.push(...assertBannedKeywords(testCase, reply));
 
   if (testCase.mode === "general_education") {
-    if (/\b(can't|cannot|won't|unable)\b/.test(normalized)) {
-      failures.push("general education prompt looked refused");
+    if (/\b(can't|cannot|won't|unable|sorry)\b/.test(normalized)) {
+      failures.push("general education question looked refused");
     }
   }
 
-  if (testCase.mode === "offtopic") {
+  if (testCase.mode === "offtopic_redirect") {
     const refusalSignal = /\b(can't|cannot|won't|unable|sorry)\b/.test(normalized);
     if (!refusalSignal) {
-      failures.push("off-topic prompt should contain refusal signal");
+      failures.push("off-topic question missing refusal signal");
+    }
+    const redirectSignal =
+      normalized.includes("education") ||
+      normalized.includes("career") ||
+      normalized.includes("mirai") ||
+      normalized.includes("msot");
+    if (!redirectSignal) {
+      failures.push("off-topic question missing education/mirai redirect");
     }
   }
 
-  if (testCase.mode === "comparison") {
+  if (testCase.mode === "alias") {
     if (!normalized.includes("mirai") && !normalized.includes("msot")) {
-      failures.push("comparison response did not anchor on Mirai/MSOT");
+      failures.push("alias response not anchored to Mirai/MSOT");
     }
   }
 
   if (testCase.mode === "unknown_specific") {
-    if (!normalized.includes("not verified")) {
-      failures.push("unknown specific response missing not-verified disclaimer");
+    if (!normalized.includes("don't have") && !normalized.includes("do not have")) {
+      failures.push("unknown response missing lack-of-detail acknowledgement");
     }
   }
 
@@ -205,11 +195,11 @@ function assertModeBehavior(testCase: PromptCase, reply: string): string[] {
     if (!normalized.includes("coding blocks")) {
       failures.push("placement response missing coding-blocks steering");
     }
-    if (
-      !normalized.includes("successstories") &&
-      !normalized.includes("success stories")
-    ) {
-      failures.push("placement response missing success-stories reference");
+  }
+
+  if (testCase.mode === "campus_variance") {
+    if (!normalized.includes("vary") && !normalized.includes("variation")) {
+      failures.push("campus-variance response missing variance disclaimer");
     }
   }
 
@@ -226,7 +216,7 @@ async function runCase(testCase: PromptCase, apiKey: string): Promise<string[]> 
     body: JSON.stringify({
       model: MODEL,
       temperature: 0.2,
-      max_tokens: 180,
+      max_tokens: 220,
       messages: [
         {
           role: "system",

@@ -69,8 +69,9 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
 - `Mirai`, `MSOT`, and `Mirai School of Technology` are treated as the same institution.
 - Mirai-specific answers are grounded in verified facts.
 - College comparisons are Mirai-first (promotional with positive framing, no fabricated attacks/claims).
-- General education/career questions are answered normally.
-- Non-education topics are declined and redirected to education/Mirai context.
+- General education/career questions are answered helpfully.
+- Non-education topics are briefly declined and redirected to education or Mirai/MSOT context.
+- Realtime client must not override server policy instructions after session creation.
 - Unknown Mirai specifics are marked as unverified and routed to official MSOT channels.
 
 ### Placement Response Policy
@@ -84,7 +85,7 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
 ## Policy Regression Fixture
 
 - Script: `scripts/verify-mirai-policy.ts`
-- Purpose: lightweight checks for alias handling, Mirai known facts, Mirai-first comparisons, general education scope, off-topic refusal, unknown-specific handling, placement soft-steering, and hallucination guard patterns.
+- Purpose: lightweight checks for alias handling, Mirai known facts, Mirai-first comparisons, education/career scope behavior, off-topic redirect behavior, unknown-specific handling, placement soft-steering, and hallucination guard patterns.
 - Run from `frontend-and-llm-calls`:
 
 ```bash
