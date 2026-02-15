@@ -44,15 +44,15 @@ export default function Home() {
         <div className="flex flex-col items-center gap-6">
           {/* Robot Logo */}
           <div className="w-48 h-48 rounded-full border-4 border-cyan-400 flex flex-col items-center justify-center mb-8">
-            <div className="flex gap-8 mb-6">
-              <div className="w-6 h-6 rounded-full bg-cyan-400" />
-              <div className="w-6 h-6 rounded-full bg-cyan-400" />
+            <div className="flex gap-10 mb-8">
+              <div className="w-7 h-5 rounded-full bg-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.45)]" />
+              <div className="w-7 h-5 rounded-full bg-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.45)]" />
             </div>
-            <div className="bg-white rounded-full h-2 w-16" />
+            <div className="w-20 h-2 rounded-full bg-white opacity-90" />
           </div>
 
           <h1 className="text-4xl font-bold text-cyan-400 mb-4">
-            Romaji AI Robot
+            Romaji: Your AI voice companion at MSOT
           </h1>
           <div className="flex justify-center mb-4">
             <Image src={miraiLogo} alt="Mirai logo" width={130} />

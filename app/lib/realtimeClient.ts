@@ -80,11 +80,11 @@ export class RealtimeClient {
 
     const normalizedName =
       typeof userName === "string" && userName.trim() ? userName.trim() : "Guest";
-    // Keep the opener generic/enthusiastic to avoid priming users toward Mirai-specific topics.
+    // Keep the opener generic/enthusiastic; force English for first greeting.
     const kickoffText =
       normalizedName === "Guest"
-        ? "Give one short, enthusiastic welcome and ask: How can I help you today?"
-        : `Give ${normalizedName} one short, enthusiastic welcome and ask: How can I help you today?`;
+        ? "In English, give one short, enthusiastic welcome and ask: How can I help you today?"
+        : `In English, give ${normalizedName} one short, enthusiastic welcome and ask: How can I help you today?`;
 
     this.dataChannel.send(
       JSON.stringify({
@@ -224,6 +224,8 @@ export class RealtimeClient {
         type: "session.update",
         session: {
           modalities: ["audio", "text"],
+          instructions:
+            "Language lock rule: after the English greeting, infer language from the first substantive user message and keep responding in that same language for the session. Switch only if the user explicitly asks to change language. If unsure between English and Hindi, ask one short clarification in English.",
           turn_detection: {
             type: "server_vad",
             threshold: vadThreshold,

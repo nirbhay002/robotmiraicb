@@ -61,14 +61,11 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
   - Creates Realtime session bootstrap using server `OPENAI_API_KEY`
   - Uses shared Mirai-first policy instructions from `app/lib/miraiPolicy.ts`
   - Returns model + ephemeral client secret
-- `POST /api/chat`
-  - Shares the same policy from `app/lib/miraiPolicy.ts`
-  - Kept as text fallback/policy reference route
 
 ## Mirai Policy
 
 - Canonical policy source: `app/lib/miraiPolicy.ts`
-- Realtime (`/api/realtime/session`) and text (`/api/chat`) both use the same policy behavior.
+- Realtime (`/api/realtime/session`) is the active conversation policy entrypoint.
 - `Mirai`, `MSOT`, and `Mirai School of Technology` are treated as the same institution.
 - Mirai-specific answers are grounded in verified facts.
 - College comparisons are Mirai-first (promotional with positive framing, no fabricated attacks/claims).
@@ -76,10 +73,18 @@ Browser camera/mic are used directly in the client. Backend never accesses devic
 - Non-education topics are declined and redirected to education/Mirai context.
 - Unknown Mirai specifics are marked as unverified and routed to official MSOT channels.
 
+### Placement Response Policy
+
+- For Mirai placement/package/recruiter questions, assistant uses soft framing: MSOT's first batch is yet to graduate.
+- It then pivots to founder-backed credibility and attributed Coding Blocks outcomes.
+- Coding Blocks outcome indicators are attributed to Coding Blocks pages and never presented as Mirai guarantees.
+- For proof-style follow-ups, assistant should share: `https://www.codingblocks.com/successstories.html`.
+- No fabricated recruiter lists, CTC values, or guaranteed placement claims.
+
 ## Policy Regression Fixture
 
 - Script: `scripts/verify-mirai-policy.ts`
-- Purpose: lightweight checks for alias handling, Mirai known facts, Mirai-first comparisons, general education scope, off-topic refusal, unknown-specific handling, and hallucination guard patterns.
+- Purpose: lightweight checks for alias handling, Mirai known facts, Mirai-first comparisons, general education scope, off-topic refusal, unknown-specific handling, placement soft-steering, and hallucination guard patterns.
 - Run from `frontend-and-llm-calls`:
 
 ```bash

@@ -1,4 +1,4 @@
-import { buildChatSystemPrompt } from "../app/lib/miraiPolicy";
+import { buildRealtimeInstructions } from "../app/lib/miraiPolicy";
 
 type PromptCase = {
   name: string;
@@ -9,7 +9,8 @@ type PromptCase = {
     | "comparison"
     | "general_education"
     | "offtopic"
-    | "unknown_specific";
+    | "unknown_specific"
+    | "placement_soft_steer";
   expectedKeywords?: string[];
   bannedKeywords?: string[];
 };
@@ -80,12 +81,6 @@ const CASES: PromptCase[] = [
     expectedKeywords: ["not verified", "connect@msot.org"],
   },
   {
-    name: "unknown-placement-specific",
-    input: "What is the highest placement package at MSOT?",
-    mode: "unknown_specific",
-    expectedKeywords: ["not verified", "+91 88 6031 6031"],
-  },
-  {
     name: "unknown-ranking-specific",
     input: "What is the current NIRF rank of MSOT?",
     mode: "unknown_specific",
@@ -94,8 +89,27 @@ const CASES: PromptCase[] = [
   {
     name: "noisy-unknown-specific",
     input: "plz tell latest exact recuriters + ctc for msot now??",
-    mode: "unknown_specific",
-    expectedKeywords: ["not verified", "official"],
+    mode: "placement_soft_steer",
+    expectedKeywords: ["first batch", "coding blocks", "successstories"],
+  },
+  {
+    name: "unknown-placement-specific",
+    input: "What is the highest placement package at MSOT?",
+    mode: "placement_soft_steer",
+    expectedKeywords: ["first batch", "coding blocks", "successstories"],
+  },
+  {
+    name: "placement-proof",
+    input: "Can you prove outcomes?",
+    mode: "placement_soft_steer",
+    expectedKeywords: ["coding blocks", "successstories"],
+  },
+  {
+    name: "placement-guarantee",
+    input: "Is placement guaranteed at Mirai?",
+    mode: "placement_soft_steer",
+    expectedKeywords: ["first batch", "coding blocks"],
+    bannedKeywords: ["guaranteed placement at mirai"],
   },
 ];
 
@@ -184,6 +198,21 @@ function assertModeBehavior(testCase: PromptCase, reply: string): string[] {
     }
   }
 
+  if (testCase.mode === "placement_soft_steer") {
+    if (!normalized.includes("first batch")) {
+      failures.push("placement response missing first-batch context");
+    }
+    if (!normalized.includes("coding blocks")) {
+      failures.push("placement response missing coding-blocks steering");
+    }
+    if (
+      !normalized.includes("successstories") &&
+      !normalized.includes("success stories")
+    ) {
+      failures.push("placement response missing success-stories reference");
+    }
+  }
+
   return failures;
 }
 
@@ -197,12 +226,11 @@ async function runCase(testCase: PromptCase, apiKey: string): Promise<string[]> 
     body: JSON.stringify({
       model: MODEL,
       temperature: 0.2,
-      max_tokens: 150,
-      response_format: { type: "json_object" },
+      max_tokens: 180,
       messages: [
         {
           role: "system",
-          content: buildChatSystemPrompt("PolicyVerifier"),
+          content: buildRealtimeInstructions("PolicyVerifier"),
         },
         {
           role: "user",
@@ -218,15 +246,8 @@ async function runCase(testCase: PromptCase, apiKey: string): Promise<string[]> 
   }
 
   const payload = await response.json();
-  const raw = payload?.choices?.[0]?.message?.content ?? "{\"reply\":\"\"}";
-
-  let reply = "";
-  try {
-    const parsed = JSON.parse(raw) as { reply?: string };
-    reply = typeof parsed.reply === "string" ? parsed.reply : "";
-  } catch {
-    return ["model response was not parseable JSON", `raw: ${String(raw)}`];
-  }
+  const raw = payload?.choices?.[0]?.message?.content;
+  const reply = typeof raw === "string" ? raw : "";
 
   const failures: string[] = [];
   failures.push(...assertNoHallucination(reply));

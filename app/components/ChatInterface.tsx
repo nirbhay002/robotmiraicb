@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { captureVideoFrameBlob } from "../lib/cameraFrame";
 import { RealtimeClient } from "../lib/realtimeClient";
+import miraiLogo from "../../assets/mirai-logo.png";
 
 interface ChatInterfaceProps {
   userName: string | null;
@@ -460,7 +462,16 @@ export default function ChatInterface({
   }, []);
 
   return (
-    <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-black">
+    <div className="relative w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-black">
+      <div className="pointer-events-none absolute right-3 top-3 z-30 rounded-lg bg-black/35 p-2 md:right-5 md:top-5 md:p-2.5">
+        <Image
+          src={miraiLogo}
+          alt="Mirai logo watermark"
+          width={76}
+          className="h-auto w-14 opacity-65 md:w-[76px]"
+          priority
+        />
+      </div>
       {phase === "SCANNING" && (
         <div className="flex-1 flex flex-col items-center justify-center">
           <h2 className="text-2xl font-bold text-cyan-400 mb-6">
@@ -557,19 +568,13 @@ export default function ChatInterface({
 
       {phase === "READY" && (
         <>
-          <div className="flex justify-between items-center px-8 py-4">
+          <div className="flex items-center px-8 py-4 pr-24 md:pr-28">
             <p className="text-cyan-300 text-lg">
               Logged in as:{" "}
               <span className="font-bold text-white">
                 {recognizedName || "Guest"}
               </span>
             </p>
-            <button
-              onClick={handleEndChat}
-              className="px-6 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-all shadow-lg"
-            >
-              End Chat
-            </button>
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center">
@@ -578,6 +583,13 @@ export default function ChatInterface({
             </div>
             <p className="text-cyan-300 text-lg">Live voice chat is active</p>
           </div>
+
+          <button
+            onClick={handleEndChat}
+            className="absolute right-4 bottom-4 z-30 px-6 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-all shadow-lg sm:bottom-5 md:right-8 md:bottom-6"
+          >
+            End Chat
+          </button>
         </>
       )}
 
@@ -616,12 +628,12 @@ function RobotFace({ isLive }: { isLive: boolean }) {
 
       <div className="flex gap-32 mb-20">
         <div
-          className={`w-24 h-24 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 shadow-2xl shadow-cyan-400/50 transition-all duration-150 ${
+          className={`w-24 h-20 rounded-[999px] bg-gradient-to-br from-cyan-200 to-cyan-400 shadow-2xl shadow-cyan-400/40 transition-all duration-150 ${
             blinkLeft ? "scale-y-[0.05] translate-y-2" : "scale-y-100"
           }`}
         />
         <div
-          className={`w-24 h-24 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 shadow-2xl shadow-cyan-400/50 transition-all duration-150 ${
+          className={`w-24 h-20 rounded-[999px] bg-gradient-to-br from-cyan-200 to-cyan-400 shadow-2xl shadow-cyan-400/40 transition-all duration-150 ${
             blinkRight ? "scale-y-[0.05] translate-y-2" : "scale-y-100"
           }`}
         />
